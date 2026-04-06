@@ -33,7 +33,7 @@ if 'uploader_key' not in st.session_state:
 
 st.set_page_config(
     page_title="OptEazy",
-    page_icon="📈",
+    page_icon="favicon.svg",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -117,21 +117,24 @@ if not st.session_state.get("authentication_status"):
     
     # --- Performance-Optimized Asset Loader ---
     @st.cache_data
-    def get_hero_b64():
-        if os.path.exists("assets/hero_widescreen_3d.png"):
+    def get_asset_b64(file_path):
+        if os.path.exists(file_path):
             import base64
-            with open("assets/hero_widescreen_3d.png", "rb") as f:
+            with open(file_path, "rb") as f:
                 return base64.b64encode(f.read()).decode()
         return None
 
     with col_hero:
-        hero_b64 = get_hero_b64()
+        hero_b64 = get_asset_b64("assets/hero_widescreen_3d.png")
+        logo_b64 = get_asset_b64("Logo.svg")
         if hero_b64:
             # Immersive Hero Background with Branding Overlay
+            logo_html = f'<img src="data:image/svg+xml;base64,{logo_b64}" width="180" style="margin-bottom:20px;">' if logo_b64 else ""
             st.markdown(f"""
                 <div class="hero-background-console">
                     <div class="hero-overlay-content">
-                        <h1 class="hero-branding-title">OPTEAZY</h1>
+                        {logo_html}
+                        <h1 class="hero-branding-title" style="margin-top:0;">OPTEAZY</h1>
                         <p class="hero-branding-slogan">Professional Edge, Made Eazy</p>
                     </div>
                 </div>
@@ -293,7 +296,7 @@ if st.session_state.get("authentication_status"):
     # --- Sidebar Layout ---
     with st.sidebar:
         # 1. Branding Header (Ultra-Compact)
-        st.markdown(f'<h3 style="color:#2962ff; margin-bottom:0; font-size:1.3rem;">OPTEAZY</h3>', unsafe_allow_html=True)
+        st.image("Logo.svg", width=195)
         st.markdown(f'<p style="color:#8b949e; font-size:0.65rem; margin-top:-5px; margin-bottom:10px;">Institutional Terminal</p>', unsafe_allow_html=True)
         
         # 2. Welcome Info (Zero Margin)

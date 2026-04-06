@@ -29,3 +29,10 @@ coverage.xml
 *.lock
 WiredTiger.lock
 mongod.lock
+
+# Data Directories (Exclude from Git)
+input_file/
+output/
+db_persist/
+logs/
+temp/

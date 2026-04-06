@@ -5,8 +5,9 @@
     --bg-main: #0e1117;
     --bg-secondary: #161b22;
     --text-primary: #ffffff;
-    --text-secondary: #c9d1d9;
-    --accent-blue: #2962ff;
+    --text-secondary: #E5E7EB;
+    --accent-blue: #3B82F6;
+    --accent-cyan: #22D3EE;
     --accent-green: #008f51;
     --accent-red: #da3633;
     --border-color: #30363d;
@@ -28,6 +29,7 @@ footer {visibility: hidden;}
 section[data-testid="stSidebar"] {
     background-color: var(--bg-secondary) !important;
     border-right: 1px solid var(--border-color);
+    padding-top: 1rem !important;
 }
 
 /* Metric Card Customization */
@@ -42,7 +44,7 @@ div[data-testid="stMetric"] {
 
 div[data-testid="stMetric"]:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(41, 98, 255, 0.15);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.15);
     border-color: var(--accent-blue);
 }
 
@@ -213,7 +215,7 @@ footer {
 .stButton>button:hover, div[data-testid="stFormSubmitButton"] button:hover {
     filter: brightness(1.15) !important;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(41, 98, 255, 0.4) !important;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4) !important;
 }
 
 /* Typography Enhancements */
@@ -233,7 +235,7 @@ footer {
     font-weight: 800 !important;
     margin: 0 !important;
     letter-spacing: 2px !important;
-    text-shadow: 0 2px 10px rgba(41, 98, 255, 0.5) !important;
+    text-shadow: 0 2px 10px rgba(59, 130, 246, 0.5) !important;
 }
 
 .hero-branding-slogan {
@@ -267,11 +269,57 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
 }
 
 section[data-testid="stSidebar"] hr {
-    margin-top: 5px !important;
-    margin-bottom: 5px !important;
+    margin-top: 15px !important;
+    margin-bottom: 15px !important;
 }
 
 section[data-testid="stSidebar"] .stCaption {
     font-size: 0.65rem !important;
     margin-bottom: 0 !important;
+}
+
+/* --- SITE CONFIGURATION & ADMIN DASHBOARD --- */
+.config-section {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    padding: 24px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.config-header {
+    margin-top: 0 !important;
+    margin-bottom: 15px !important;
+    font-size: 1.2rem !important;
+    font-weight: 700 !important;
+    color: var(--accent-blue) !important;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+    padding-bottom: 10px;
+}
+
+.admin-danger-zone {
+    border: 1px solid rgba(218, 54, 51, 0.3) !important;
+    background-color: rgba(218, 54, 51, 0.05) !important;
+}
+
+.admin-danger-zone .config-header {
+    color: var(--accent-red) !important;
+    border-bottom: 1px solid rgba(218, 54, 51, 0.2);
+}
+
+.config-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+}
+
+/* User management table refinements */
+div[data-testid="stTable"] {
+    background-color: var(--bg-main);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
 }
