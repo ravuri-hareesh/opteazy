@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Union, Any, Dict
 from utils import guess_columns, to_numeric
 from nsepython import nse_get_index_quote
+from spot_utils import get_nifty_spot_fresh
 
 # --- LOGGING ---
 logger = logging.getLogger("Data_Manager")
@@ -278,26 +279,18 @@ def get_available_expiries(date_str: str) -> List[str]:
     
     return sorted(expiries, reverse=True)
 
-def get_latest_analysis_date(expiry: Optional[str] = None) -> str:
-    """
-    Returns the most recent market analysis date.
-    If expiry is provided, returns the most recent date that has data for that expiry.
-    """
+def get_latest_analysis_date(expiry: Optional[str] = None) -> Optional[str]:
+    """Retrieves the latest available date for a given expiry. [V2]"""
     dates = get_available_dates()
-    if not dates:
-        return get_current_date_str()
-        
-    if expiry:
-        # Narrow down to the most recent date that actually contains the target expiry
-        expiry = normalize_date_str(expiry)
-        for d in dates:
-            if (INPUT_ROOT / d / expiry).exists():
+    if not dates: return None
+    for d in dates:
+        if expiry:
+            if (INPUT_ROOT / d / normalize_date_str(expiry)).exists():
                 return d
-    
     return dates[0]
 
 def get_output_path(input_filename: Union[str, Path], expiry_date: str, date_str: Optional[str] = None, suffix: str = "_analysis.png") -> Path:
-    """Names the output file based on the input filename and fixed suffix."""
+    """Names the output file based on the input filename and fixed suffix. [V2]"""
     output_dir = get_output_dir(expiry_date, date_str)
     base_name = Path(input_filename).stem
     return output_dir / f"{base_name}{suffix}"
@@ -400,90 +393,86 @@ def load_sidecar_metadata(file_path: Path) -> Optional[Dict[str, Any]]:
 
 def get_validated_spot(df: pd.DataFrame, file_path: Path, allow_api: bool = True) -> float:
     """
-    Robustly determines spot price using API-first logic with retries,
-    validated against the option chain's strike boundaries.
+    Robustly determines spot price using a multi-tier strategy:
+    1. Sidecar Cache (Persistence)
+    2. File Analysis (Column Scan + Raw Regex Scan) - PRIMARY SOURCE
+    3. NSE API (Fallback)
     """
     import re
     
-    # Check sidecar first (Persistence Layer)
+    # Tier 1: Check sidecar first (Persistence Layer)
     sidecar = load_sidecar_metadata(file_path)
     if sidecar and "spot" in sidecar and sidecar["spot"] > 0:
         logger.info(f"Using spot from sidecar: {sidecar['spot']}")
         return float(sidecar["spot"])
 
-    # Extract strike boundaries for validation
-    strikes = pd.to_numeric(df.iloc[:, 0], errors='coerce').dropna() # Assume first col is strikes if unknown
-    if strikes.empty:
-        # Fallback to scanning columns for 'STRIKE'
-        for col in df.columns:
-            if "STRIKE" in str(col).upper():
-                strikes = pd.to_numeric(df[col], errors='coerce').dropna()
-                break
-    
-    s_min = strikes.min() if not strikes.empty else 0
-    s_max = strikes.max() if not strikes.empty else 999999
-    
     spot = 0
-    api_data = None
     
-    # Logic 1: API-First (with Retries)
-    if allow_api:
-        logger.info("Attempting NSE API spot retrieval...")
-        for attempt in range(1, 4):
+    # Tier 2: File Analysis (Prioritized over API as per user request)
+    logger.info("Attempting file-based spot price extraction...")
+    
+    # 2a. DataFrame Column Scan
+    possible_spot_cols = ["SPOT PRICE", "UNDERLYING VALUE", "UNDERLYING", "SPOT", "VALUE"]
+    for col in df.columns:
+        col_upper = str(col).upper()
+        if any(ps in col_upper for ps in possible_spot_cols):
+            val = df[col].iloc[0]
+            if pd.notnull(val):
+                try:
+                    clean_val = float(str(val).replace(",", ""))
+                    if clean_val > 0:
+                        spot = clean_val
+                        logger.info(f"Spot discovered via Column Scan: {spot}")
+                        break
+                except: pass
+    
+    # 2b. Raw File Regex Scan (handles formats where spot is outside the main table)
+    if spot == 0:
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                # Scan first 100 lines for keywords and numerical values
+                for i, line in enumerate(f):
+                    line_upper = line.upper()
+                    if any(kw in line_upper for kw in ["UNDERLYING VALUE", "INDEX VALUE", "UNDERLYING INDEX", "SPOT PRICE"]):
+                        match = re.search(r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?)", line)
+                        if match:
+                            val = float(match.group(1).replace(",", ""))
+                            if val > 0:
+                                spot = val
+                                logger.info(f"Spot discovered via Raw File Scan: {spot}")
+                                break
+                    if i > 100: break
+        except Exception as e:
+            logger.warning(f"Raw file spot scan failed: {e}")
+
+    # Tier 3: NSE API Fallback (Only if file extraction fails)
+    api_data = None
+    if spot == 0 and allow_api:
+        logger.info("[V2] File extraction failed. Falling back to fresh NSE API for spot price...")
+        fresh_spot = get_nifty_spot_fresh()
+        if fresh_spot:
+            spot = fresh_spot
+            logger.info(f"Fresh API Spot Retrieved (Fallback): {spot}")
+        else:
+            logger.warning("Fresh API spot fetch failed. Trying stale fallback as last resort...")
+            # LEGACY STALE FALLBACK (Jan 2026 data bug source)
             try:
-                # nse_get_index_quote is used as per user requirement for NIFTY 50 stability
                 data = nse_get_index_quote("NIFTY 50")
                 if isinstance(data, dict):
                     raw_val = data.get('last') or data.get('lastPrice') or data.get('underlyingValue')
                     if raw_val:
-                        # Sanitize (remove commas)
-                        clean_val = float(str(raw_val).replace(",", ""))
-                        
-                        # VALIDATION: Soft validation against strike boundaries
-                        # If it's outside, we still accept it (API is truth) but log a warning.
-                        if not (s_min <= clean_val <= s_max):
-                             logger.warning(f"⚠️ API Spot {clean_val} is outside strike range ({s_min}-{s_max}). Option chain might be incomplete.")
-                        
-                        spot = clean_val
-                        api_data = data # Store for metadata saving
-                        logger.info(f"API Spot Accepted: {spot}")
-                        break
-                else:
-                    logger.warning(f"API Attempt {attempt} returned non-dict: {type(data)}")
+                        spot = float(str(raw_val).replace(",", ""))
+                        api_data = data
+                        logger.warning(f"CRITICAL: Using STALE fallback spot: {spot}")
             except Exception as e:
-                logger.warning(f"API Attempt {attempt} failed: {e}")
-            
-            if attempt < 3:
-                time.sleep(2) # Brief backoff
+                logger.error(f"Legacy fallback failed: {e}")
 
-    # Logic 2: Regex/File Fallback (if API fails or is disabled)
-    if spot == 0:
-        logger.info("Falling back to file-scanning regex for spot price...")
-        # (Leveraging the already improved load_option_chain regex logic)
-        # We manually check the DF columns first
-        possible_spot_cols = ["SPOT PRICE", "UNDERLYING VALUE", "UNDERLYING", "SPOT", "VALUE"]
-        for col in df.columns:
-            col_upper = str(col).upper()
-            if any(ps in col_upper for ps in possible_spot_cols):
-                val = df[col].iloc[0]
-                if pd.notnull(val):
-                    try:
-                        clean_val = float(str(val).replace(",", ""))
-                        if clean_val > 0:
-                            spot = clean_val
-                            break
-                    except: pass
-
-    # Persistent Storage: Update sidecar if found
+    # Persistent Storage: Update sidecar if spot found
     if spot > 0:
         meta = sidecar or {}
-        # Ensure 'spot' remains the primary mandatory field
         meta["spot"] = spot
-        
-        # If we have API data, merge it into the metadata
         if isinstance(api_data, dict):
             meta.update(api_data)
-            
         save_sidecar_metadata(file_path, meta)
 
     return spot

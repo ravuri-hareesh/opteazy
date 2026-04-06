@@ -1,23 +1,16 @@
-from nsepython import nse_get_index_quote
+from spot_utils import get_nifty_spot_fresh
 import json
 
 def get_nifty_spot():
     try:
-        print("Fetching NIFTY 50 Index Quote...")
-        # Using nse_get_index_quote which is often more stable for Indices
-        data = nse_get_index_quote("NIFTY 50")
+        print("Fetching NIFTY 50 Index Quote (Fresh)...")
+        spot = get_nifty_spot_fresh()
         
-        if isinstance(data, dict):
-            print(f"SUCCESS: Captured {len(data)} data points from NSE.")
-            print(f"Debug: Found keys: {list(data.keys())}")
-            spot = data.get('last') or data.get('lastPrice') or data.get('underlyingValue')
-            if spot:
-                print(f"SPOT_RESULT: {spot}")
-                print("Note: This full dictionary is now being persisted to .meta.json in data_manager.py")
-            else:
-                print(f"FAILED: Could not find price in: {json.dumps(data)[:300]}")
+        if spot:
+            print(f"SPOT_RESULT: {spot}")
+            print("Note: Success. This uses the robust spot_utils logic.")
         else:
-            print(f"FAILED: Received non-dict response: {type(data)}")
+            print("FAILED: Could not retrieve fresh spot price.")
             
     except Exception as e:
         print(f"ERROR: {str(e)}")

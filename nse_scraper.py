@@ -18,6 +18,7 @@ logger = logging.getLogger("NSE_Scraper")
 # Add project root to path
 sys.path.append(str(Path(__file__).parent))
 from data_manager import get_input_dir, normalize_date_str, get_current_date_str
+from spot_utils import get_nifty_spot_fresh
 
 # --- SESSION MGMT ---
 session = requests.Session()
@@ -99,7 +100,10 @@ def process_to_df(json_data):
         if not expiry_dates: return None
         
         target_expiry = expiry_dates[0]
-        spot_price = json_data.get("underlyingValue") or records.get("underlyingValue") or 0
+        
+        # USE ROBUST FRESH FETCH FOR SPOT TO AVOID IN-JSON STALE DATA
+        # (NSE API sometimes returns stale underlyingValue in option-chain JSON)
+        spot_price = get_nifty_spot_fresh() or json_data.get("underlyingValue") or records.get("underlyingValue") or 0
         
         rows = []
         all_data = records.get("data", [])
@@ -218,11 +222,12 @@ def run_scraper(symbol="NIFTY"):
     init_nse_session()
     
     while True:
-        if is_market_open():
-            success, msg, _ = fetch_and_save(symbol)
-            logger.info(f"Pulse Result: {msg}")
+        print(f"{datetime.now()} [V2] [INFO] Scraper Step: Fetching {symbol}...")
+        success, msg, target_expiry = fetch_and_save(symbol)
+        if success:
+            print(f"{datetime.now()} [V2] [INFO] Sync Pulse Success: {symbol} ({target_expiry})")
         else:
-            logger.info("Market Closed. Passive mode...")
+            print(f"{datetime.now()} [V2] [WARNING] Sync Pulse Failed: {msg}")
             
         time.sleep(300 + random.randint(-10, 10))
 
