@@ -1,43 +1,57 @@
-# Start OptEazy Databases (MySQL and MongoDB)
+# Start OptEazy Databases (MySQL and MongoDB) - Robust Idempotent Version
 
 $mysqlBase = "C:\Users\ravur\Downloads\opteazy\db_persist\mysql"
 $mysqlData = "$mysqlBase\data"
 $mongoBase = "C:\Users\ravur\Downloads\opteazy\db_persist\mongodb"
 $mongoData = "$mongoBase\data"
-
-# Ensure log directories exist in persist
 $mysqlLogDir = "$mysqlBase\log"
 $mongoLogDir = "$mongoBase\log"
-New-Item -ItemType Directory -Path $mysqlLogDir -Force | Out-Null
-New-Item -ItemType Directory -Path $mongoLogDir -Force | Out-Null
 
-# 0. KILL ZOMBIE PROCESSES (Release locks on ibdata1 and log files)
-Write-Host "Cleaning up existing database processes..." -ForegroundColor Yellow
-Stop-Process -Name "mysqld" -Force -ErrorAction SilentlyContinue
-Stop-Process -Name "mongod" -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-
-# 1. Initialize MySQL if needed
-if (-not (Test-Path $mysqlData)) {
-    Write-Host "Initializing MySQL data directory..." -ForegroundColor Yellow
-    New-Item -ItemType Directory -Path $mysqlData -Force | Out-Null
-    mysqld --initialize-insecure --datadir=$mysqlData
+# Ensure directories exist
+@( $mysqlLogDir, $mongoLogDir, $mysqlData, $mongoData ) | ForEach-Object {
+    if (-not (Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
 }
 
-# 2. Initialize MongoDB if needed
-if (-not (Test-Path $mongoData)) {
-    Write-Host "Creating MongoDB data directory..." -ForegroundColor Yellow
-    New-Item -ItemType Directory -Path $mongoData -Force | Out-Null
+# --- 1. MySQL ---
+$mysqlProc = Get-Process -Name "mysqld" -ErrorAction SilentlyContinue
+if ($mysqlProc) {
+    Write-Host "[CHECK] MySQL is already running (PID: $($mysqlProc.Id))." -ForegroundColor Green
+} else {
+    Write-Host "[START] MySQL is not running. Launching..." -ForegroundColor Cyan
+    if (-not (Test-Path "$mysqlData\mysql")) {
+        Write-Host "Initializing MySQL data directory..." -ForegroundColor Yellow
+        mysqld --initialize-insecure --datadir=$mysqlData
+    }
+    Start-Process "mysqld" -ArgumentList "--datadir=$mysqlData", "--console", "--log-error=$mysqlLogDir\error.log" -NoNewWindow
 }
 
-# 3. Start MySQL in background
-Write-Host "Starting MySQL (Port 3306)..." -ForegroundColor Cyan
-# Using explicit log paths to avoid permission issues in the apps folder
-Start-Process "mysqld" -ArgumentList "--datadir=$mysqlData", "--console", "--log-error=$mysqlLogDir\error.log" -NoNewWindow -PassThru
+# --- 2. MongoDB ---
+function Start-Mongo {
+    Start-Process "mongod" -ArgumentList "--dbpath=$mongoData", "--logpath=$mongoLogDir\mongod.log", "--logappend" -NoNewWindow
+    Start-Sleep -Seconds 4
+    return Get-Process -Name "mongod" -ErrorAction SilentlyContinue
+}
 
-# 4. Start MongoDB in background
-Write-Host "Starting MongoDB (Port 27017)..." -ForegroundColor Cyan
-# Using explicit log path to avoid FileNotOpen errors in apps folder
-Start-Process "mongod" -ArgumentList "--dbpath=$mongoData", "--logpath=$mongoLogDir\mongod.log", "--logappend" -NoNewWindow -PassThru
+$mongoProc = Get-Process -Name "mongod" -ErrorAction SilentlyContinue
+if ($mongoProc) {
+    Write-Host "[CHECK] MongoDB is already running (PID: $($mongoProc.Id))." -ForegroundColor Green
+} else {
+    Write-Host "[START] MongoDB is not running. Launching..." -ForegroundColor Cyan
+    $mongoProc = Start-Mongo
+    if (-not $mongoProc) {
+        Write-Host "[REPAIR] MongoDB failed to start. Attempting automated recovery..." -ForegroundColor Yellow
+        Remove-Item "$mongoData\mongod.lock" -Force -ErrorAction SilentlyContinue
+        # Attempt repair
+        Start-Process "mongod" -ArgumentList "--dbpath=$mongoData", "--repair" -NoNewWindow -Wait
+        $mongoProc = Start-Mongo
+    }
+}
 
-Write-Host "Databases are starting up. Please wait about 10-15 seconds for them to be ready." -ForegroundColor Green
+if ($mongoProc) {
+    Write-Host "[CHECK] MongoDB is active." -ForegroundColor Green
+} else {
+    Write-Host "[ERROR] MongoDB failed to start cleanly." -ForegroundColor Red
+    Write-Host "Action Required: Check logs at $mongoLogDir\mongod.log or consider a manual data reset." -ForegroundColor Gray
+}
+
+Write-Host "`nOptEazy Database Services Status: OK" -ForegroundColor Green

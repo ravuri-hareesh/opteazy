@@ -30,9 +30,11 @@ coverage.xml
 WiredTiger.lock
 mongod.lock
 
-# Data Directories (Exclude from Git)
-input_file/
-output/
+# Data Directories (Tracked for Snapshot)
+# (Removing input_file/ and output/ from ignore as requested)
+
+# Persistent DB Data (Exclude raw files from Git)
 db_persist/
 logs/
 temp/
+# Note: snapshots/ is tracked for portable backups

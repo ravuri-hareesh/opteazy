@@ -938,15 +938,8 @@ if st.session_state.get("authentication_status"):
             if not indic_evolution_df.empty:
                 fig_indic = make_subplots(specs=[[{"secondary_y": True}]])
                 
-                # Dynamic USD/INR Color based on trend
-                usd_inr_color = "#ff5252" # Default Red
-                if len(indic_evolution_df) > 1:
-                    last_val = indic_evolution_df["usd_inr"].iloc[-1]
-                    prev_val = indic_evolution_df["usd_inr"].iloc[-2]
-                    if last_val < prev_val:
-                        usd_inr_color = "#00c853" # Green (Strengthening)
-                    elif last_val > prev_val:
-                        usd_inr_color = "#ff5252" # Red (Weakening)
+                # Unified USD/INR Color (Institutional Blue)
+                usd_inr_color = "#2962ff"
 
                 # USD/INR (Left Axis)
                 fig_indic.add_trace(go.Scatter(x=indic_evolution_df["timestamp"], y=indic_evolution_df["usd_inr"],
@@ -966,7 +959,7 @@ if st.session_state.get("authentication_status"):
                     hovermode="x unified",
                     legend=dict(font=dict(color="white")),
                     xaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
-                    yaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
+                    yaxis=dict(title_font=dict(color=usd_inr_color), tickfont=dict(color=usd_inr_color)),
                     yaxis2=dict(title_font=dict(color="white"), tickfont=dict(color="white"))
                 )
                 fig_indic.update_yaxes(title_text="USD/INR (₹)", secondary_y=False)
