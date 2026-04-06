@@ -161,6 +161,83 @@ class OptEazyDB:
             logger.error(f"Failed to save snapshot to MongoDB: {e}")
             return False
 
+    def create_indicator_table(self, table_name: str):
+        """Ensures that a daily MySQL table for market indicators exists."""
+        if not self.connect_mysql():
+            return
+        cursor = self._mysql_conn.cursor()
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME,
+                usd_inr FLOAT,
+                wti_crude FLOAT,
+                brent_crude FLOAT,
+                UNIQUE KEY unique_record (timestamp)
+            )
+        """)
+        self._mysql_conn.commit()
+        cursor.close()
+
+    def save_market_indicators(self, data: Dict[str, Any], date_str: str):
+        """Saves indicator data to both MySQL and MongoDB daily collections."""
+        # Normalize date_str to DD_MM_YYYY format for table names
+        normalized_date = date_str.replace("-", "_")
+        table_name = f"market_indicators_{normalized_date}"
+        
+        # 1. MySQL Storage (Efficiency)
+        if self.connect_mysql():
+            try:
+                self.create_indicator_table(table_name)
+                cursor = self._mysql_conn.cursor()
+                sql = f"INSERT IGNORE INTO {table_name} (timestamp, usd_inr, wti_crude, brent_crude) VALUES (%s, %s, %s, %s)"
+                
+                ts = data.get("timestamp")
+                if isinstance(ts, str):
+                    ts = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                
+                val = (ts, data.get("USD_INR"), data.get("WTI_Crude"), data.get("Brent_Crude"))
+                cursor.execute(sql, val)
+                self._mysql_conn.commit()
+                cursor.close()
+            except Exception as e:
+                logger.error(f"Failed to save indicator record to MySQL: {e}")
+
+        # 2. MongoDB Storage (Detailed Dump)
+        if self.connect_mongo():
+            try:
+                db = self._mongo_client["opteazy_raw"]
+                collection = db[table_name]
+                
+                ts = data.get("timestamp")
+                if not collection.find_one({"timestamp": ts}):
+                    collection.insert_one(data)
+            except Exception as e:
+                logger.error(f"Failed to save indicator dump to MongoDB: {e}")
+
+    def query_market_indicators(self, date_str: str) -> pd.DataFrame:
+        """Retrieves indicator data for a specific date from MySQL."""
+        if not self.connect_mysql():
+            return pd.DataFrame()
+            
+        normalized_date = date_str.replace("-", "_")
+        table_name = f"market_indicators_{normalized_date}"
+        
+        try:
+            # Check if table exists
+            cursor = self._mysql_conn.cursor()
+            cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+            if not cursor.fetchone():
+                return pd.DataFrame()
+                
+            query = f"SELECT * FROM {table_name} ORDER BY timestamp ASC"
+            df = pd.read_sql(query, self._mysql_conn)
+            cursor.close()
+            return df
+        except Exception as e:
+            logger.error(f"Failed to query indicators: {e}")
+            return pd.DataFrame()
+
     def query_evolution_data(self, expiry: str) -> pd.DataFrame:
         """Queries historical analysis data for a specific expiry from MySQL."""
         if not self.connect_mysql():
